@@ -58,13 +58,19 @@ def get_loc_in_cam_frame(pos1, pos2, init_p1_to_p2, body_to_cam):
     alpha = heading1 - return_array[3] - np.pi/2
     return return_array, alpha
 
-def get_transform(pose,inv=False):
-    translation_vec = pose.kinematics_estimated.position
+def get_transform(pose, inv=False, isDronePose=False):
+    if isDronePose:
+        translation_vec = pose.kinematics_estimated.position
+    else:
+        translation_vec = pose.position
     translation = np.zeros((3,))
     translation[0] = translation_vec.x_val
     translation[1] = translation_vec.y_val
     translation[2] = translation_vec.z_val
-    q = pose.kinematics_estimated.orientation
+    if isDronePose:
+        q = pose.kinematics_estimated.orientation
+    else:
+        q = pose.orientation
     phi, theta, psi = quaternion_to_eul(q)
     rotmat_b_to_n = eul_to_rotmat(phi,theta,psi)
     if inv:
@@ -107,41 +113,41 @@ def make_transform(rotmat,t):
 def make_transform_inv(rotmat,t):
     return np.vstack((np.hstack((np.transpose(rotmat),-np.dot(np.transpose(rotmat),np.reshape(t,(3,1))))),[0,0,0,1]))
 
-#####
-num_files = 1 # number of time steps
-N = 1 # 1 other drone
-start_locs = np.array([[0,0], [5,0]])
-cam_matrix = make_transform(np.array([[0,0,1],[0,-1,0],[1,0,0]]),np.array([0.5,0,0.1]))
-os.chdir('/home/navlab-admin/AirSim-MOT/data')
-datapath = os.getcwd()
-foldername = '/test'
-datafolder = datapath + foldername + '/pose/'
-savefolder = datapath + foldername + '/processed/label/'
-#####
+# #####
+# num_files = 1 # number of time steps
+# N = 1 # 1 other drone
+# start_locs = np.array([[0,0], [5,0]])
+# cam_matrix = make_transform(np.array([[0,0,1],[0,-1,0],[1,0,0]]),np.array([0.5,0,0.1]))
+# os.chdir('/home/navlab-admin/AirSim-MOT/data')
+# datapath = os.getcwd()
+# foldername = '/test'
+# datafolder = datapath + foldername + '/pose/'
+# savefolder = datapath + foldername + '/processed/label/'
+# #####
 
-start0 = start_locs[0,:]
-transform_matrix_list = np.zeros((N,4,4))
+# start0 = start_locs[0,:]
+# transform_matrix_list = np.zeros((N,4,4))
 
-for i in range(N):
-    starti = start_locs[i+1,:]
-    ti = np.append((starti - start0),0)
-    transformi = make_transform(np.eye(3),ti)
-    transform_matrix_list[i,:,:] = transformi
+# for i in range(N):
+#     starti = start_locs[i+1,:]
+#     ti = np.append((starti - start0),0)
+#     transformi = make_transform(np.eye(3),ti)
+#     transform_matrix_list[i,:,:] = transformi
 
-for i in range(num_files):
-    fname = num_files*[None]
-    fname[0] = 'Drone0' + ("pose%.6d.txt" % i)
-    drone0 = open(datafolder+fname[0], 'rb')
-    pos0 = pickle.load(drone0)
-    drone0.close()
+# for i in range(num_files):
+#     fname = num_files*[None]
+#     fname[0] = 'Drone0' + ("pose%.6d.txt" % i)
+#     drone0 = open(datafolder+fname[0], 'rb')
+#     pos0 = pickle.load(drone0)
+#     drone0.close()
 
-    for j in range(N):
-        fname[j] = 'Drone' + str(j+1) + ("pose%.6d.txt" % i)
+#     for j in range(N):
+#         fname[j] = 'Drone' + str(j+1) + ("pose%.6d.txt" % i)
 
-    for j in range(N):
-        dronej = open(datafolder+fname[j], 'rb')
-        posj = pickle.load(dronej)
-        transform_init = transform_matrix_list[j,:,:]
-        dataj = get_items_of_a_label_row(pos0, posj, transform_init, cam_matrix)
-        write_to_label_file(dataj,'Car',savefolder+("%.6d.txt" % i))
-        dronej.close()
+#     for j in range(N):
+#         dronej = open(datafolder+fname[j], 'rb')
+#         posj = pickle.load(dronej)
+#         transform_init = transform_matrix_list[j,:,:]
+#         dataj = get_items_of_a_label_row(pos0, posj, transform_init, cam_matrix)
+#         write_to_label_file(dataj,'Car',savefolder+("%.6d.txt" % i))
+#         dronej.close()
