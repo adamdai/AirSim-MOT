@@ -27,28 +27,35 @@ class mySensorData:
         self.compress_img = compress_img
         self.label_folder = label_folder
 
+        # transformation from AirSim NED camera to conventional camera 
+        self.ned2cam = np.array([[0,1,0,0],[0,0,1,0],[1,0,0,0],[0,0,0,1]])
+
+    # collect data from drone
     def collectData(self, vehicle_name, 
 			get_cam_data = False, get_lidar_data = False, get_calib_data = False,
 			 cam_num = 0, lidar_num = 0, pose_num = 0, calib_num = 0):
         lidar_pose = [None]
         camera_info = [None]
+
         if get_cam_data:
             camera_info = self.genImg(cam_num, vehicle_name)
-            # pprint.pprint(camera_info)
+
         if get_lidar_data:
             lidar_pose,  lidar_points = self.genPC(lidar_num, vehicle_name)
-            # pprint.pprint(lidar_pose)
+
         if get_calib_data:
-            P2, R0, v2c = self.genCalib(calib_num, vehicle_name, lidar_pose, camera_info)
-        # self.test_mats(P2,R0,v2c,lidar_points)
+            self.genCalib(calib_num, vehicle_name, lidar_pose, camera_info)
+
         self.genPose(pose_num, vehicle_name)
 
-    def genImg(self, im_num, vehicle_name): # stores the camera data in folder cam_folder, with name having idx
+
+    # stores the camera data in folder cam_folder, with name having idx
+    def genImg(self, im_num, vehicle_name): 
         responses = self.getImg(vehicle_name)
         # pprint.pprint(responses[0].camera_position)
         # pprint.pprint(responses[0].camera_orientation)
         filename_img = self.cam_folder + ("%.6d.png" % im_num)
-        filename_ts = self.pose_folder + ("cam_ts%.6d,txt" % im_num)
+        filename_ts = self.pose_folder + ("cam_ts%.6d.txt" % im_num)
         for idx, response in enumerate(responses):
             if self.compress_img: #png format
                 airsim.write_file(os.path.normpath(filename_img), response.image_data_uint8)
@@ -66,35 +73,37 @@ class mySensorData:
         op1.close()
         return camera_info
     
-    def genPC(self, im_num, vehicle_name): # stores the lidar data in folder lidar_folder, with name having idx
+
+     # stores the lidar data in folder lidar_folder, with name having idx
+    def genPC(self, im_num, vehicle_name):
+        
         points, lidar_pose, time_stamp = self.getPC(vehicle_name)
-        filename_pc = self.lidar_folder + ("%.6d.bin" % im_num)
+        
+        # save timestamp in pose folder
         filename_ts = self.pose_folder + ("velo_ts%.6d.txt" % im_num)
-        # op1 = open(os.path.normpath(filename_pc), 'wb')
-        op2 = open(os.path.normpath(filename_ts), 'wb')
-        # pickle.dump(points, op1)
-        pickle.dump(time_stamp,op2)
-        # op1.close()
-        op2.close()
+        op = open(os.path.normpath(filename_ts), 'wb')
+        pickle.dump(time_stamp, op)
+        op.close()
+
+        # save lidar in velodyne folder as bin 
+        filename_pc = self.lidar_folder + ("%.6d.bin" % im_num)
         n_points = points.shape[0]
-        min_points = 1e10
-        if n_points < min_points:
-            min_points = n_points
+        # append column of 1.0s for intensity
         final_points = np.hstack((points, np.ones((n_points,1), dtype=np.dtype('f4'))))
-        # lt = get_transform(lidar_pose, True)
-        # final_points_t = np.dot(final_points, ) 
         final_points.tofile(filename_pc)
         return lidar_pose, final_points
     
+    # save pose to file to be processed later
     def genPose(self, im_num, vehicle_name):
         state = self.client.getMultirotorState(vehicle_name = vehicle_name)
-        pprint.pprint(vehicle_name + " position: " + str(state.kinematics_estimated.position))
+        #pprint.pprint(vehicle_name + " position: " + str(state.kinematics_estimated.position))
         filename_pose = self.pose_folder + vehicle_name + ("pose%.6d.txt" % im_num)
-        op1 = open(os.path.normpath(filename_pose), 'wb')
-        pickle.dump(state,op1)
-        op1.close()
+        op = open(os.path.normpath(filename_pose), 'wb')
+        pickle.dump(state, op)
+        op.close()
 
-    def getImg(self, vehicle_name): # utility for genImg
+    # utility for genImg
+    def getImg(self, vehicle_name): 
         if self.compress_img:
             responses = self.client.simGetImages([
                             airsim.ImageRequest("front_cam", airsim.ImageType.Scene)], vehicle_name = vehicle_name) 
@@ -103,7 +112,9 @@ class mySensorData:
                             airsim.ImageRequest("front_cam", airsim.ImageType.Scene, False, False)], vehicle_name=vehicle_name)
         return responses
 
-    def getPC(self, vehicle_name): # utility for genPC
+
+    # utility for genPC
+    def getPC(self, vehicle_name): 
         k = 1
         points_list = []
         for i in range(k):
@@ -128,49 +139,39 @@ class mySensorData:
 
         return points_all, lidar_pose, time_stamp
 
+
+    # generate KITTI calib calibration file
     def genCalib(self, calib_num, vehicle_name, lidar_pose, camera_info):
         lt = get_transform(lidar_pose)
         ct = get_transform(camera_info.pose, True)
-        # pprint.pprint(camera_info)
-        trans_possible = np.array([[0,1,0,0],[0,0,1,0],[1,0,0,0],[0,0,0,1]])
-        # ct = np.dot(trans_possible,ct)
-        v2c = np.dot(trans_possible,np.dot(ct,lt))[0:3,:]
-        # v2c = np.dot(ct,lt)[0:3,:]
-        # v2c = np.dot(ct,lt)
-        # print(v2c)
+
+        # velodyne to camera
+        v2c = np.dot(self.ned2cam, np.dot(ct, lt))[0:3,:]
+        # IMU to velodyne
         i2v = np.linalg.inv(lt)[0:3,:] # this is wrong
         R0 = np.eye(3)
-        # R0 = np.array([[0,1,0,0],[0,0,1,0],[1,0,0,0],[0,0,0,1]])
-        # print(camera_info.proj_mat.matrix)
+        # camera projection matrix (wrong but not used by PointRCNN)
         P2 = np.asarray(camera_info.proj_mat.matrix)[0:3,:]
         # set camera center to image center (W/2, H/2)
         P2[0,3] = 960
         P2[1,3] = 540
         P2[1,2] = np.abs(P2[1,2])
-        # P2 = np.hstack((np.asarray(camera_info.proj_mat.matrix)[0:3,1:4],np.zeros((3,1))))
-        # print(P2)
         P0 = P2
         P1 = P2
         P3 = P2
         write_to_label_file(P0, P1, P2, P3, R0, v2c, i2v, self.calib_folder+("%.6d.txt" % calib_num))
-        return P2, R0, v2c
 
+
+    # save KITTI label file containing 3D bounding box information
     def saveLabel(self, start_locs, id, camera_info, pos2, label_num, obj_name):
+        
         ct = get_transform(camera_info.pose, inv = True)
+        ct = np.dot(self.ned2cam,ct)
 
-        trans_possible = np.array([[0,1,0,0],[0,0,1,0],[1,0,0,0],[0,0,0,1]])
-        ct = np.dot(trans_possible,ct)
-
-        ## T = [R | t
-        ##      0 | 1]
-
-        # T1 = get_transform(pos1, inv = True, isDronePose = True)
         T2 = get_transform(pos2, inv = False, isDronePose = True)
         t1 = np.append((start_locs[id,:] - start_locs[0,:]),0)
         init_transformmat = np.vstack((np.hstack((np.eye(3),np.reshape(t1,(3,1)))),[0,0,0,1]))
 
-        
-        # transformi = make_transform(np.eye(3),t1)
         final_mat = np.dot(ct, np.dot(init_transformmat,T2))
 
         data = np.zeros((14,))
@@ -187,7 +188,7 @@ class mySensorData:
         # location 3D object location x,y,z in camera coordinates (in meters) 
         # and rotation_y Rotation ry around Y-axis in camera coordinates [-pi..pi]
         
-        # data[10:13] = final_mat[0:3,3]
+        # shift bbox center to be located at ground to align with KITTI format
         data[10:13] = np.dot(final_mat, np.reshape(np.array([0,0,h/2,1]),(4,1)))[0:3,0]
 
         z_b2 = final_mat[2,3]
@@ -198,57 +199,22 @@ class mySensorData:
         data[2] = alpha    # alpha Observation angle of object, ranging [-pi..pi]
         
         if np.linalg.norm(data[10:13]) <= 25:
-            f=open(self.label_folder+("%.6d.txt" % label_num),'w')
+            f=open(self.label_folder+("%.6d.txt" % label_num),'a+')
             f.write(obj_name + ' ')
             np.savetxt(f,np.reshape(data,(1,14)),fmt='%0.4f')
             f.close()
         else:
-            f=open(self.label_folder+("%.6d.txt" % label_num),'w')
+            f=open(self.label_folder+("%.6d.txt" % label_num),'a+')
             f.close()
 
+
+    # utility for reading pickle file
     def read_pickle_file(self,fname):
         drone0 = open(fname, 'rb')
         content = pickle.load(drone0)
         drone0.close()
         return content
 
-    def test_mats(self,P2,R0,v2c,lidar_points):
-        temp1 = np.dot(lidar_points,np.transpose(v2c))
-        temp2 = np.transpose(np.dot(R0,np.transpose(temp1)))
-        temp3 = np.hstack((temp2,np.ones((temp2.shape[0],1))))
-
-        # P2 = np.hstack((P2[0:3,1:4],np.zeros((3,1))))
-
-        final = np.dot(temp3,np.transpose(P2))
-
-        final[:, 0] /= final[:, 2]
-        final[:, 1] /= final[:, 2]
-        
-        fov_inds = (lidar_points[:, 0] > 1.0)
-        final_2d = final[fov_inds, 0:2]
-        np.savetxt('test.txt', final_2d, delimiter=',') 
-        print('Did it!!!')
-        # pts = np.transpose(lidar_points)
-        # temp1 = np.dot(v2c,pts)
-        # temp2 = np.dot(R0,temp1)
-        # # for i in range(temp2.shape[1]):
-        # #     if temp2[2,i] < 0:
-        # #         temp2[:,i] = np.zeros((3,))
-        
-        # P2[0,2] = 1920/2
-        # P2[1,2] = 1080/2
-        # P2[1,1] = np.abs(P2[1,1])
-        # print(P2)
-        # op = np.dot(P2, temp2)
-
-        # fov_inds = (pts[0, :] > 2.0)
-        # op_fov = op[:,fov_inds]
-                
-        # # for i in range(op.shape[1]):
-        # #     op[0,i] /= op[2,i]
-        # #     op[1,i] /= op[2,i]
-        # #     op[2,i] /= op[2,i] 
-        # np.savetxt('test.txt', op_fov, delimiter=',') 
 
 
 

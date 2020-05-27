@@ -23,11 +23,13 @@ parser.add_argument('--postprocess', action='store_true', default=False,
 
 args = parser.parse_args()
 
-## ---------------------- PARAMETERS ---------------------- ##
+## -------------------------- PARAMETERS ------------------------ ##
+# - - - - - - - - adjust these to match settings.json - - - - - - - - #
 num_drones = 9                  # total number of drones in simulation
+start_locs = np.array([[0,0], [3,0], [3,-3], [3,3], [0,-3], [0,3], [-3,-3], [-3,0], [-3,3]])  # initialization locations 
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - #
 z = -4                          # flying altitude
 z_range = [-3, -5]              # range of flight altitudes
-start_locs = np.array([[0,0], [5,0]])  # initialization locations 
 global_frame = False            # whether to shift drone coordinates to global frame
 path_length = 15
 loops = 20
@@ -37,7 +39,7 @@ adaptive_lookahead = 1
 
 # data collection parameters
 interval = 1
-num_collections = 1000
+num_collections = 10
 timeout = num_collections
 save_folder = '/' + str(num_collections) + '_samples_' + str(num_drones) + '_drones_street/'
 val_split = 0.2
@@ -243,7 +245,6 @@ if __name__ == "__main__":
         print("done.")
 
     # postprocessing
-    count = 999
     gen_labels(sensors, count, pose_folder)
     print("label files created")
 
